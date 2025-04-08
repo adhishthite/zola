@@ -5,28 +5,37 @@ import {
   get,
   getMany,
   keys,
-  set,
   setMany,
 } from "idb-keyval"
 
+const isClient = typeof window !== "undefined"
+
+type StoreNames = "chats" | "messages" | "sync"
+type Stores = Record<StoreNames, ReturnType<typeof createStore>>
+
 // define named object stores
-const stores = {
-  chats: createStore("zola-db", "chats"),
-  messages: createStore("zola-db", "messages"),
-  sync: createStore("zola-db", "sync"),
-}
+const stores: Stores | null = isClient
+  ? {
+      chats: createStore("zola-db", "chats"),
+      messages: createStore("zola-db", "messages"),
+      sync: createStore("zola-db", "sync"),
+    }
+  : null
 
 // ensure stores are initialized (no-op read)
-Object.values(stores).forEach((store) => {
-  get("__init__", store).catch(() => {})
-})
+if (isClient) {
+  Object.values(stores!).forEach((store) => {
+    get("__init__", store).catch(() => {})
+  })
+}
 
 // read one or all items from a store
 export async function readFromIndexedDB<T>(
-  table: keyof typeof stores,
+  table: StoreNames,
   key?: string
 ): Promise<T | T[]> {
-  const store = stores[table]
+  if (!isClient) return key ? (null as T) : ([] as T[])
+  const store = stores![table]
   if (key) {
     const item = await get<T>(key, store)
     return item as T
@@ -39,10 +48,11 @@ export async function readFromIndexedDB<T>(
 
 // write one or multiple items to a store
 export async function writeToIndexedDB<T extends { id: string | number }>(
-  table: keyof typeof stores,
+  table: StoreNames,
   data: T | T[]
 ): Promise<void> {
-  const store = stores[table]
+  if (!isClient) return
+  const store = stores![table]
   const entries: [IDBValidKey, T][] = Array.isArray(data)
     ? data.map((item) => [item.id, item])
     : [[data.id, data]]
@@ -52,10 +62,11 @@ export async function writeToIndexedDB<T extends { id: string | number }>(
 
 // delete one or all items from a store
 export async function deleteFromIndexedDB(
-  table: keyof typeof stores,
+  table: StoreNames,
   key?: string
 ): Promise<void> {
-  const store = stores[table]
+  if (!isClient) return
+  const store = stores![table]
 
   if (key) {
     await del(key, store)
@@ -66,6 +77,7 @@ export async function deleteFromIndexedDB(
 }
 
 export async function clearAllIndexedDBStores() {
+  if (!isClient) return
   await deleteFromIndexedDB("chats")
   await deleteFromIndexedDB("messages")
   await deleteFromIndexedDB("sync")
